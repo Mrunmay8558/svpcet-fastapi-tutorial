@@ -29,6 +29,33 @@ The layering rule: routes never touch the database, controllers never build HTTP
 responses beyond raising `HTTPException`, and CRUD classes never contain business
 rules.
 
+## 📚 Folder guides — start here
+
+Every folder has its own `README.md` explaining what it does in plain, simple
+language, with the analogy of a **restaurant** running through all of them.
+
+| Guide | What it explains |
+| --- | --- |
+| 🧰 [`commons/`](commons/README.md) | The shared toolbox — password hashing, JWT tokens, logging |
+| 🍽️ [`core/`](core/README.md) | The restaurant — how all the layers fit together |
+| 🚪 [`core/apis/`](core/apis/README.md) | The front door — the app, middleware, CORS, auto-docs |
+| 🧑‍🍳 [`core/apis/routes/`](core/apis/routes/README.md) | The waiter — endpoints, HTTP verbs, status codes |
+| 📋 [`core/apis/schemas/`](core/apis/schemas/README.md) | The order forms — why validation is free |
+| 📥 [`core/apis/schemas/requests/`](core/apis/schemas/requests/README.md) | Each field of the sign-up form, explained |
+| 👨‍🍳 [`core/controllers/`](core/controllers/README.md) | The chef — where all the business rules live |
+| 📦 [`core/cruds/`](core/cruds/README.md) | The storeroom keeper — saving and fetching |
+| 🏷️ [`core/models/`](core/models/README.md) | The labels — what a saved document must look like |
+| 🚪 [`core/database/`](core/database/README.md) | The fridge door — one connection, shared by all |
+| 🧰 [`core/utils/`](core/utils/README.md) | The helpers — email sending (planned) |
+
+### 🔑 Flow guide: login and change password
+
+**[core/apis/routes/LOGIN_AND_CHANGE_PASSWORD_FLOW.md](core/apis/routes/LOGIN_AND_CHANGE_PASSWORD_FLOW.md)**
+
+A step-by-step walkthrough of how sign-up, login, and change-password work —
+diagrams, code sketches for every layer, how a protected endpoint reads the
+bearer token, a build checklist, and the security mistakes that bite everyone.
+
 ## Getting started
 
 ### 1. Prerequisites
