@@ -18,7 +18,7 @@ Layer contract:
 
 from fastapi import HTTPException, status
 
-from commons.auth import encrypt_password, signJWT
+from commons.auth import encrypt_password, signJWT, verify_password
 from core import logger
 from core.cruds.user_crud import UserCRUD
 
@@ -112,4 +112,61 @@ class UserController:
             # Logged for diagnosis, then re-raised so the failure still counts.
             # Swallowing it here would return None and report success.
             logging.error(f"Error in UserController.register_user: {error}")
+            raise
+
+    async def login_user(self, request: dict):
+        """
+        Authenticate a user and issue an access token.
+
+        Args:
+            request: Login values validated by
+                :class:`~core.apis.schemas.requests.user_request.UserLoginRequest`
+                and converted to a dict.
+        """
+        try:
+            logging.info("Calling UserController.login_user function")
+            user = await self.user_crud.get_by_email(request.get("email"))
+            if not user:
+                logging.warning(f"User not found with email {request.get('email')}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Invalid email or password",
+                )
+            if not user.user_status == "ACTIVE":
+                logging.warning(f"User with email {request.get('email')} is inactive")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is inactive",
+                )
+            plain_password = request.get("password")
+            hashed_password = user.password
+            if not verify_password(plain_password, hashed_password):
+                logging.warning(f"Invalid password for user {request.get('email')}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password",
+                )
+            access_token = signJWT(
+                user_role=user.user_role.value,
+                id=str(user.id),
+                expiry_duration=ACCESS_TOKEN_EXPIRY_SECONDS,
+            )
+            # Built explicitly rather than by dumping the stored document, so
+            # the password hash cannot reach the client.
+            return {
+                "message": "User created successfully",
+                "data": {
+                    "id": str(user.id),
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "email": user.email,
+                    "mobile_number": user.mobile_number,
+                    "user_role": user.user_role.value,
+                    "user_status": user.user_status.value,
+                    "access_token": access_token,
+                },
+            }
+
+        except Exception as error:
+            logging.error(f"Error in UserController.login_user: {error}")
             raise

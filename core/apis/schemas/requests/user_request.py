@@ -65,3 +65,18 @@ class UserSignInRequest(BaseModel):
     address: Optional[List[UserAddress]] = Field(
         None, description="The user's address information."
     )
+
+
+class UserLoginRequest(BaseModel):
+    """
+    Payload for ``POST /v1/users/login``.
+
+    Attributes:
+        email: Email address, used as the login identifier. Required.
+        password: Plain-text password, minimum eight characters. Hashed by the
+            controller before it reaches the database and never stored or
+            returned as given.
+    """
+
+    email: str = Field(..., description="The user's email address.")
+    password: str = Field(..., description="The user's password.", min_length=8)

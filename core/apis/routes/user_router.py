@@ -20,7 +20,7 @@ Layer contract:
 from fastapi import APIRouter, HTTPException, status
 
 from core import logger
-from core.apis.schemas.requests.user_request import UserSignInRequest
+from core.apis.schemas.requests.user_request import UserSignInRequest, UserLoginRequest
 from core.controllers.user_controller import UserController
 
 logging = logger(__name__)
@@ -75,6 +75,32 @@ async def user_signup(request: UserSignInRequest):
         # Unexpected failure: the log gets the full cause, the client gets a
         # generic message that reveals nothing about internals.
         logging.error(f"Error in /v1/users/signup: {error}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Something Went Wrong",
+        )
+
+
+@user_router.post("/v1/user/login", status_code=status.HTTP_200_OK)
+async def user_login(request: UserLoginRequest):
+    """
+    Authenticate a user and issue an access token.
+
+    Args:
+        request: Validated login payload. FastAPI rejects malformed bodies with
+            ``422`` before this function is entered.
+    """
+    try:
+        logging.info("Calling /v1/user/login endpoint")
+        request = request.model_dump()
+        result = await UserController().login_user(request)
+        return result
+
+    except HTTPException as httperror:
+        logging.error(f"Error in /v1/user/login: {httperror}")
+        raise
+    except Exception as error:
+        logging.error(f"Error in /v1/user/login: {error}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Something Went Wrong",
