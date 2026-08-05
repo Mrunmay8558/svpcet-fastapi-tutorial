@@ -19,20 +19,24 @@ Typical usage:
     ...     user = await crud.create_user({...})
 """
 
-from typing import Optional
+from typing import List, Optional
 
-from odmantic import AIOEngine
+from odmantic import AIOEngine, ObjectId
 
 from core import logger
 from core.database.database import get_engine
-from core.models.user_model import User
+from core.models.user_model import User, UserStatus
 
 logging = logger(__name__)
 
 
 class UserCRUD:
     """
-    Create/read operations for the ``users`` collection.
+    Create/read/update operations for the ``users`` collection.
+
+    There is no delete method. A user is retired by setting ``user_status`` to
+    ``INACTIVE`` — see :meth:`update` — which blocks login while leaving every
+    order that references the account intact.
 
     The instance borrows the process-wide ODMantic engine created by
     :func:`core.database.database.get_engine`. No connection is opened here —
@@ -112,7 +116,7 @@ class UserCRUD:
         Fetch a single user by ID.
 
         Args:
-            id: The ID of the user to retrieve.
+            id: The ID of the user to retrieve, as a string.
 
         Returns:
             The matching :class:`User`, or ``None`` when no document matches.
@@ -121,22 +125,107 @@ class UserCRUD:
         Raises:
             pymongo.errors.PyMongoError: If the query fails at the database
                 level.
+
+        Note:
+            The string is converted to an ``ObjectId`` before the query is
+            built. MongoDB stores ``_id`` as a 12-byte ``ObjectId``, never as
+            text, so ``User.id == "68a1b2c3..."`` produces the perfectly valid
+            query ``{"_id": {"$eq": "68a1b2c3..."}}`` — which matches nothing.
+            No error is raised; the method simply returns ``None`` and the
+            caller reports "user not found" for a user that plainly exists.
+
+            Callers pass a plain string (that is what a URL and a JWT payload
+            carry) and the conversion happens here, once, rather than at every
+            call site.
         """
         try:
             logging.info(f"Executing UserCRUD.get_by_id function for ID: {id}")
-            user = await self.engine.find_one(User, User.id == id)
+            user = await self.engine.find_one(User, User.id == ObjectId(id))
             return user
         except Exception as error:
             logging.error(f"Error in UserCRUD.get_by_id for ID {id}: {error}")
             raise
 
-    async def update(self, id: str, update_data: dict):
+    async def get_all(
+        self,
+        user_status: Optional[UserStatus] = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> List[User]:
+        """
+        Fetch a page of users, newest first.
+
+        Args:
+            user_status: Restrict to one lifecycle state. ``None`` returns both
+                active and inactive accounts.
+            skip: Number of matching documents to step over before collecting
+                results.
+            limit: Maximum number of documents to return.
+
+        Returns:
+            list[User]: The matching page, sorted by ``created_at`` descending.
+            Empty when nothing matches — an empty page is not an error.
+
+        Raises:
+            pymongo.errors.PyMongoError: If the query fails at the database
+                level.
+
+        Note:
+            Returns full :class:`User` documents, password hash included. That
+            is correct at this layer — the CRUD's job is to fetch the record.
+            Stripping the hash is the controller's job, and it does so by
+            building each response field by field rather than dumping the model.
+        """
+        try:
+            logging.info(
+                f"Executing UserCRUD.get_all function "
+                f"(status={user_status}, skip={skip}, limit={limit})"
+            )
+
+            queries = [] if user_status is None else [User.user_status == user_status]
+
+            return await self.engine.find(
+                User,
+                *queries,
+                sort=User.created_at.desc(),
+                skip=skip,
+                limit=limit,
+            )
+        except Exception as error:
+            logging.error(f"Error in UserCRUD.get_all: {error}")
+            raise
+
+    async def count(self, user_status: Optional[UserStatus] = None) -> int:
+        """
+        Count users matching the same filter :meth:`get_all` accepts.
+
+        Args:
+            user_status: Restrict to one lifecycle state, or ``None`` for all.
+
+        Returns:
+            int: Number of matching documents.
+
+        Raises:
+            pymongo.errors.PyMongoError: If the query fails at the database
+                level.
+        """
+        try:
+            logging.info("Executing UserCRUD.count function")
+            queries = [] if user_status is None else [User.user_status == user_status]
+            return await self.engine.count(User, *queries)
+        except Exception as error:
+            logging.error(f"Error in UserCRUD.count: {error}")
+            raise
+
+    async def update(self, id: str, update_data: dict) -> Optional[User]:
         """
         Update a user document by its ID.
 
         Args:
-            id: The ID of the user to update.
-            update_data: A dictionary containing the fields to update.
+            id: The ID of the user to update, as a string.
+            update_data: A dictionary containing the fields to update. Only the
+                keys present are written; everything else on the document is
+                left as it is.
 
         Returns:
             The updated :class:`User`, or ``None`` if no document matches the ID.
@@ -144,18 +233,41 @@ class UserCRUD:
         Raises:
             pymongo.errors.PyMongoError: If the update fails at the database
                 level.
+
+        Note:
+            This method drops to the raw Motor collection rather than going
+            through the ODMantic engine, because ``$set`` writes *only* the
+            named fields. Saving a whole model instance rewrites the entire
+            document, so two concurrent updates to different fields would end
+            with the second overwriting the first's change.
+
+            ``get_collection`` is a plain function, not a coroutine — it hands
+            back a collection handle without touching the database, so it must
+            not be awaited. ``await`` on its result raises
+            ``TypeError: object AsyncIOMotorCollection can't be used in 'await'
+            expression``, which surfaces as a ``500`` from an endpoint that
+            looks perfectly correct.
+
+            ``return_document=True`` asks for the document *after* the update.
+            The default returns the version from before it, which would report
+            the old values back to the client.
         """
         try:
             logging.info(
                 f"Executing UserCRUD.update function for ID: {id} with data: {update_data}"
             )
-            user_collection = await self.engine.get_collection(User)
+            user_collection = self.engine.get_collection(User)
             docs = await user_collection.find_one_and_update(
-                {"_id": id},
+                {"_id": ObjectId(id)},
                 {"$set": update_data},
                 return_document=True,
             )
-            return docs
+            if docs is None:
+                return None
+            # find_one_and_update hands back a raw MongoDB document. Validating
+            # it into a User keeps this method's return type identical to every
+            # other read here, so callers never have to ask which one they got.
+            return User.model_validate_doc(docs)
         except Exception as error:
             logging.error(
                 f"Error in UserCRUD.update for ID {id} with data {update_data}: {error}"

@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from core.apis.routes.user_router import user_router
+from core.apis.routes.order_router import order_router
 
 #: The ASGI application. Referenced as ``core.apis.api:app`` by the server.
 app = FastAPI(
@@ -160,6 +161,7 @@ app.add_middleware(
 )
 
 app.include_router(user_router, tags=["User Management"])
+app.include_router(order_router, tags=["Order Management"])
 
 
 @app.get("/")
