@@ -17,15 +17,22 @@ Layer contract:
       versions) is never exposed to callers.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordBearer
 
 from core import logger
-from core.apis.schemas.requests.user_request import UserSignInRequest, UserLoginRequest
+from core.apis.schemas.requests.user_request import (
+    UserSignInRequest,
+    UserLoginRequest,
+    UserChangePasswordRequest,
+)
 from core.controllers.user_controller import UserController
+from commons.auth import decodeJWT
 
 logging = logger(__name__)
 
 user_router = APIRouter()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1/user/login")
 
 
 @user_router.post("/v1/users/signup", status_code=status.HTTP_201_CREATED)
@@ -101,6 +108,45 @@ async def user_login(request: UserLoginRequest):
         raise
     except Exception as error:
         logging.error(f"Error in /v1/user/login: {error}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Something Went Wrong",
+        )
+
+
+@user_router.post("/v1/user/change-password", status_code=status.HTTP_200_OK)
+async def change_password(
+    request: UserChangePasswordRequest, token: str = Depends(oauth2_scheme)
+):
+    """
+    Change the password for an authenticated user.
+
+    Args:
+        request: Validated change password payload. FastAPI rejects malformed bodies with
+            ``422`` before this function is entered.
+    """
+    try:
+        logging.info("Calling /v1/user/change-password endpoint")
+        request = request.model_dump()
+        authenticated_user_details = decodeJWT(token)
+        if not authenticated_user_details:
+            logging.warning("Invalid or expired token provided for password change")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
+        logging.info(f"Authenticated user details: {authenticated_user_details}")
+
+        result = await UserController().change_password(
+            request, authenticated_user_details
+        )
+        return result
+
+    except HTTPException as httperror:
+        logging.error(f"Error in /v1/user/change-password: {httperror}")
+        raise
+    except Exception as error:
+        logging.error(f"Error in /v1/user/change-password: {error}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Something Went Wrong",

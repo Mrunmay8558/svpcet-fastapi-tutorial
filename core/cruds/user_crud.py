@@ -106,3 +106,58 @@ class UserCRUD:
         except Exception as error:
             logging.error(f"Error in UserCRUD.get_by_email: {error}")
             raise
+
+    async def get_by_id(self, id: str) -> Optional[User]:
+        """
+        Fetch a single user by ID.
+
+        Args:
+            id: The ID of the user to retrieve.
+
+        Returns:
+            The matching :class:`User`, or ``None`` when no document matches.
+            Callers decide whether a missing user is an error.
+
+        Raises:
+            pymongo.errors.PyMongoError: If the query fails at the database
+                level.
+        """
+        try:
+            logging.info(f"Executing UserCRUD.get_by_id function for ID: {id}")
+            user = await self.engine.find_one(User, User.id == id)
+            return user
+        except Exception as error:
+            logging.error(f"Error in UserCRUD.get_by_id for ID {id}: {error}")
+            raise
+
+    async def update(self, id: str, update_data: dict):
+        """
+        Update a user document by its ID.
+
+        Args:
+            id: The ID of the user to update.
+            update_data: A dictionary containing the fields to update.
+
+        Returns:
+            The updated :class:`User`, or ``None`` if no document matches the ID.
+
+        Raises:
+            pymongo.errors.PyMongoError: If the update fails at the database
+                level.
+        """
+        try:
+            logging.info(
+                f"Executing UserCRUD.update function for ID: {id} with data: {update_data}"
+            )
+            user_collection = await self.engine.get_collection(User)
+            docs = await user_collection.find_one_and_update(
+                {"_id": id},
+                {"$set": update_data},
+                return_document=True,
+            )
+            return docs
+        except Exception as error:
+            logging.error(
+                f"Error in UserCRUD.update for ID {id} with data {update_data}: {error}"
+            )
+            raise

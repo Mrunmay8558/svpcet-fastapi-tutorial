@@ -80,3 +80,22 @@ class UserLoginRequest(BaseModel):
 
     email: str = Field(..., description="The user's email address.")
     password: str = Field(..., description="The user's password.", min_length=8)
+
+
+class UserChangePasswordRequest(BaseModel):
+    """
+    Payload for ``POST /v1/users/change-password``.
+
+    Attributes:
+        old_password: Plain-text current password, minimum eight characters.
+            Hashed by the controller before it reaches the database and never
+            stored or returned as given.
+        new_password: Plain-text new password, minimum eight characters. Hashed
+            by the controller before it reaches the database and never stored or
+            returned as given.
+    """
+
+    old_password: str = Field(
+        ..., description="The user's current password.", min_length=8
+    )
+    new_password: str = Field(..., description="The user's new password.", min_length=8)

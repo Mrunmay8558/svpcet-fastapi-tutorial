@@ -21,6 +21,8 @@ from fastapi import HTTPException, status
 from commons.auth import encrypt_password, signJWT, verify_password
 from core import logger
 from core.cruds.user_crud import UserCRUD
+import time
+from datetime import datetime, timezone
 
 logging = logger(__name__)
 
@@ -169,4 +171,42 @@ class UserController:
 
         except Exception as error:
             logging.error(f"Error in UserController.login_user: {error}")
+            raise
+
+    async def change_password(self, request: dict, authenticated_user_details: dict):
+        """
+        Change the password for an authenticated user.
+
+        Args:
+            request: Change password values validated by
+                :class:`~core.apis.schemas.requests.user_request.UserChangePasswordRequest`
+                and converted to a dict.""
+        """
+        try:
+            logging.info("Calling UserController.change_password function")
+            user = await self.user_crud.get_by_id(authenticated_user_details.get("id"))
+            if not user:
+                logging.warning(
+                    f"User not found with id {authenticated_user_details.get('id')}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+            if not verify_password(request.get("old_password"), user.password):
+                logging.warning(
+                    f"Invalid old password for user {authenticated_user_details.get('id')}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid old password",
+                )
+            new_hashed_password = encrypt_password(request.get("new_password"))
+            user.password = new_hashed_password
+            payload = {"password": new_hashed_password, "updated_at": datetime.now(timezone.utc)}
+            await self.user_crud.update(user)
+            return {"message": "Password changed successfully"}
+
+        except Exception as error:
+            logging.error(f"Error in UserController.change_password: {error}")
             raise
